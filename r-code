@@ -1,0 +1,284 @@
+
+#### SETUP
+# 1. Load csv files
+  
+  ## note the use of colClasses --- must change if you add columns.
+  # NEW 2010-2011 article dataset
+
+  setwd("~/Dropbox/Harvard/GHHP Summer project/Data")
+  ## Surgeon, Articles, Title, Journal, # of authors, position, Different Author, Exclude, Age, ABTS, ABS, Medical School, Graduation year, Y.since.grad, Foreign, Gender, Type of research, 
+  articledata = read.csv(file="CA-edited0426.csv", colClasses=c('character', 'numeric', 'character', 'character', rep('numeric', 7), 'character', rep('numeric',3), 'character', 'character'), head = TRUE, sep = ",")
+  ## Surgeon, Hospital, All CABG Cases, Isolated CABG Cases, Observed mortality rate, Expected mortality rate, RAMR,
+  surgeondata = read.csv(file="surgeondata0426.csv", head =  TRUE, colClasses=c('character', 'character', rep('numeric',6)), sep = ",")
+  
+# 2. Organize variables
+  surgeondata2 = surgeondata[which(surgeondata$Hospital == "Surgeon Overall"),] # Create new dataset with only the overall numbers
+  articledata2 = subset(articledata, articledata$Surgeon!="")   #Pick out the surgeons that are in surgeondata2.
+  difference = setdiff(articledata2$Surgeon, surgeondata2$Surgeon)  # Check the difference
+  
+  # Take out the surgeons who are NAs in surgeondata2, which makes the two identical in length. The other NAs will be excluded by the linear model itself.
+  surgeondata3 = surgeondata2[complete.cases(surgeondata2),]   # Take out the N/A rows
+  articledata3 = articledata2[-c(32, 212),] 
+  difference2 = setdiff(articledata3$Surgeon, surgeondata3$Surgeon)
+  
+  # The first two are NA from original dataset, even though they show up as 0 here, the latter are NA excluded based on articles.
+  articledata.no.NA = articledata2[-c(32, 212, 116, 141, 227, 240, 260),] 
+  surgeondata.no.NA = surgeondata2[-c(32, 212, 116, 141, 227, 240, 260),]
+  difference3 = setdiff(articledata.no.NA$Surgeon, surgeondata.no.NA$Surgeon)
+  
+  # surgeondata.no.NA and articledata.no.NA now have identical names in the same order  
+
+  pub.surgeons = surgeondata.no.NA[which(articledata.no.NA$Articles != 0),]
+  non.pub.surgeons = surgeondata.no.NA[which(articledata.no.NA$Articles == 0),]
+  pub.articles = articledata.no.NA[which(articledata.no.NA$Articles != 0),]
+  
+                #this is useless because they're all 0
+                non.pub.articles = articledata.no.NA[which(articledata.no.NA$Articles == 0),]
+  
+#### DATA ANALYSIS
+#### 1. Recreate volume-outcome.
+  
+  # Describe the RAMR variable
+  hist(surgeondata2$RAMR, breaks = 30)
+  plot(surgeondata2$RAMR)
+  
+  mean(surgeondata2$RAMR) # mean = 1.958376
+  var(surgeondata2$RAMR) # var = 6.78326
+  summary(surgeondata2$RAMR)
+  boxplot(surgeondata2$RAMR)
+  
+  shapiro.test(surgeondata2$RAMR) # Not a normal distribution
+  sum(articledata.no.NA$Articles) # 237 articles
+  
+  # Correlations of vol-outcome -- no significant p-value with either surgeondata or surgeondata2
+  
+  cor.test(surgeondata.no.NA$RAMR, surgeondata.no.NA$All.CABG.Cases) # not appropriate?
+  summary(glm.nb(surgeondata.no.NA$RAMR ~ surgeondata.no.NA$All.CABG.Cases))
+  summary(lm(surgeondata$RAMR ~ surgeondata$All.CABG.Cases)) # Not sign.
+  summary(lm(surgeondata2$RAMR ~ surgeondata2$All.CABG.Cases)) # Not sign.
+  summary(lm(surgeondata$RAMR ~ surgeondata$Isolated.CABG.Cases)) # Not sign.
+  summary(lm(surgeondata2$RAMR ~ surgeondata2$Isolated.CABG.Cases)) # Not sign.
+  
+          # Group the data into quartiles by volume
+          quartiles <- quantile(surgeondata2$All.CABG.Cases, c(0.25,0.5,0.75),na.rm=TRUE)
+          quartiles[1:3]  
+          
+          volume = surgeondata2$All.CABG.Cases
+          volume[surgeondata2$All.CABG.Cases > quartiles[3]] = 4 ## Most cases - more than 180.5
+          volume[surgeondata2$All.CABG.Cases <= quartiles[3]] = 3
+          volume[surgeondata2$All.CABG.Cases <= quartiles[2]] = 2
+          volume[surgeondata2$All.CABG.Cases <= quartiles[1]] = 1
+          
+          boxplot(surgeondata2$RAMR ~ volume, cex.main = 1.5, cex.lab = 1.2, main = "Volume-outcome relationship", ylab = 'Risk-adjusted mortality rate (%)', xlab = 'Number of surgeries', names = c("<49", "49-105", "105-180", ">180"))
+          
+  # Digression: Article-volume relationship
+              # Group data by articles
+                      quartiles = quantile(pub.articles$Articles, c(0.25,0.5,0.75), na.rm = TRUE)
+                      quartiles[1:3]
+                      
+                      publication = pub.articles$Articles
+                      publication[pub.articles$Articles > quartiles[3]] = 4
+                      publication[pub.articles$Articles <= quartiles[3]] = 3
+                      publication[pub.articles$Articles <= quartiles[2]] = 2
+                      publication[pub.articles$Articles <= quartiles[1]] = 1  
+              
+                      boxplot(pub.surgeons$RAMR ~ publication,  main = "Publication-outcome relationship for publishing surgeons", ylab = "Risk-adjusted mortality rate (%)", xlab = "Number of articles")
+
+  
+              # Visualize
+                # GLM NB
+                plot(pub.articles$Articles ~ pub.surgeons$All.CABG.Cases ,  main = "Article-volume relationship", ylab = 'Number of articles', xlab = 'Number of surgeries')
+                article.volume = glm(pub.articles$Articles ~ pub.surgeons$All.CABG.Cases + pub.articles$Y.since.grad + pub.surgeons$RAMR)
+                summary(article.volume)
+                abline(a = coef(article.volume)[1], b = coef(article.volume)[2], col = 'red')
+              
+              
+                # Linear model
+                plot(articledata.no.NA$Articles ~ surgeondata.no.NA$All.CABG.Cases)
+              
+                regr.vol.art = lm(pub.articles$Articles ~ pub.surgeons$All.CABG.Cases + pub.articles$Y.since.grad) # Could add +pub.articles$Medical.School
+                summary(regr.vol.art)
+                plot(pub.articles$Articles ~ pub.surgeons$All.CABG.Cases, cex.main = 1.5, cex.lab = 1.2, ylab = 'Number of articles', xlab = 'Number of surgeries', main = 'Article-volume relationship')
+                abline(a = coef(regr.vol.art)[1], b = coef(regr.vol.art)[2], col = 'red')
+                
+                    # Take out Robbins
+                    regr.vol.art.noRob = lm(pub.articles.noRob$Articles ~ pub.surgeons.noRob$All.CABG.Cases)
+                    summary(regr.vol.art.noRob)
+                    plot(pub.articles.noRob$Articles ~ pub.surgeons.noRob$All.CABG.Cases)
+                    abline(a = coef(regr.vol.art.noRob)[1], b = coef(regr.vol.art.noRob)[2], col = 'red')
+  
+          
+### 2. Correlate results & article #
+
+  # LINEAR REGRESSION MODEL
+  # USING PLOT, ASSUMPTIONS ARE NOT MET: http://www.r-bloggers.com/checking-glm-model-assumptions-in-r/  
+  regr.model = (glm(surgeondata.no.NA$RAMR ~ articledata.no.NA$Articles + surgeondata.no.NA$All.CABG.Cases + articledata.no.NA$Y.since.grad))
+  summary(regr.model)
+  summary(lm(surgeondata.no.NA$RAMR ~ articledata.no.NA$Articles + surgeondata.no.NA$All.CABG.Cases + articledata.no.NA$Y.since.grad))
+  plot(regr.model)
+  confint(regr.model, level = 0.95)
+  anova(regr.model)
+  
+  summary(lm(surgeondata2$RAMR ~ articledata3$Articles + surgeondata2$Isolated.CABG.Cases))
+  plot(surgeondata.no.NA$RAMR ~ articledata.no.NA$Articles, type="p")
+  
+  # PLOTS
+  #Volume
+  plot(surgeondata.no.NA$RAMR ~ surgeondata.no.NA$All.CABG.Cases, cex.main = 1.5, cex.lab = 1.2, xlab = 'Number of surgeries', ylab = 'Risk-adjusted mortality rate (%)', main = 'Volume-outcome relationship')
+    abline(a = coef(regr.model)[1], b = coef(regr.model)[3], col = 'red')
+  x = coef(regr.model)[4]
+  
+  # RAMR All surgeons
+  plot (surgeondata.no.NA$RAMR ~ articledata.no.NA$Articles, xlab = 'Number of articles published', ylab = "Risk-adjusted mortality rate (%)", main = 'Publication-outcome relationship') 
+      abline(a = coef(regr.model)[1], b = coef(regr.model)[2], col= 'red')
+
+
+      # Remove Robbins
+    surgeondata.noRob = surgeondata.no.NA[-c(213),]
+    articledata.noRob = articledata.no.NA[-c(213),]
+    regr.model.noRob = (lm(surgeondata.noRob$RAMR ~ articledata.noRob$Articles + surgeondata.noRob$All.CABG.Cases + articledata.noRob$Y.since.grad))
+    summary(regr.model.noRob)
+    plot(surgeondata.noRob$RAMR ~ articledata.noRob$Articles, xlab = 'Number of articles published', ylab = "Risk-adjusted mortality rate (%)", main = 'Publication-outcome relationship (remove outlier)')
+      abline(a = coef(regr.model.noRob)[1], b = coef(regr.model.noRob)[2], col = 'green')
+  
+  # Published surgeons
+  regr.model.pub = (lm(pub.surgeons$RAMR ~ pub.articles$Articles + pub.surgeons$All.CABG.Cases + pub.articles$Y.since.grad))
+  summary(regr.model.pub)
+  plot (pub.surgeons$RAMR ~ pub.articles$Articles)
+    abline(a = coef(regr.model.pub)[1], b= coef(regr.model.pub)[2], col = "blue")
+      
+      # Remove Robbins - lose significance
+      pub.surgeons.noRob = pub.surgeons[-c(51),]
+      pub.articles.noRob = pub.articles[-c(51),]
+      regr.model.pub.noRob = (lm(pub.surgeons.noRob$RAMR ~ pub.articles.noRob$Articles + pub.surgeons.noRob$All.CABG.Cases + pub.articles.noRob$Y.since.grad))
+      summary(regr.model.pub.noRob)  
+        abline(a = coef(regr.model.pub.noRob)[1], b = coef(regr.model.noRob)[2], col = 'black')
+  
+  # GENERAL LINEAR MODEL with Poisson.
+  
+    ## NOTES: Interpreting the coefficients: An additional article will increase the mean of RAMR by a factor of (for example) exp(0.033) = 1.034. 
+    ## Poisson distributed data is heteroscedastic, mean = variance, which isn't the default hypothesis when fitting with lm. 
+    ## If residual deviance is much larger than degrees of freedom, you may want to use quasipoisson() instead of poisson()    
+    ## I don't think I need to take the log. RAMR.log = log(1 + surgeondata2$RAMR)
+  
+    ## Could add + articledata.no.NA$Medical.School but that seems like a small sample size problem
+    glm.poisson = glm(surgeondata.no.NA$RAMR ~ articledata.no.NA$Articles + surgeondata.no.NA$All.CABG.Cases + articledata.no.NA$Y.since.grad, family = quasipoisson(link=log), na.action = na.exclude)
+    summary(glm.poisson)
+    abline(a = coef(glm.poisson)[1], b = coef(glm.poisson)[2], col = 'black')
+  
+    # Negative binomial regression -- extremely low p-values for everything + 27 warnings! This makes no sense...
+            # Make RAMR into integers
+            RAMR.100 = surgeondata.no.NA$RAMR * 100 
+          
+            glm.negbi = glm.nb(RAMR.100 ~ articledata.no.NA$Articles + surgeondata.no.NA$All.CABG.Cases + articledata.no.NA$Y.since.grad, na.action = na.exclude)
+            summary(glm.negbi)
+  
+  # Hurdle model
+    Articles = articledata.no.NA$Articles
+    var(Articles, na.rm =T) # 8.225805
+    mean(articledata.no.NA$Articles, na.rm = T) # 0.8909774
+  
+    Cases = surgeondata.no.NA$All.CABG.Cases
+  
+    glm.hurdle0 = hurdle(RAMR.100 ~ Articles + Cases -1, link = 'log', dist = 'negbin') # It works, but why add the -1???
+    glm.hurdle0 = hurdle(Articles ~ Cases, link = 'log', , dist = 'negbin')
+    summary(glm.hurdle0)
+    coef(glm.hurdle0)  
+    exp(-0.002)
+  
+    # I should be able to build up a model using coefficients from the first and adding zeroes, but it doesn't work.
+
+    coef.hurdle =c(coef(glm.hurdle0))
+    coef.hurdle
+    glm.hurdle1 = hurdle(RAMR.100 ~ Articles + Cases, link = 'log', dist = 'negbin', start=c(coef(glm.hurdle0)))
+    # summary(glm.hurdle1)  
+
+
+# 4. Publishers vs non-publishers group comparisons
+  
+    #   pub.surgeons = surgeondata2[which(articledata3$Articles != 0),]
+    #   non.pub.surgeons = surgeondata2[which(articledata3$Articles == 0),]
+  
+    # Describe t the variables 
+      ## RAMR is not normally distributed and variances are not equal
+      
+      var(pub.surgeons$RAMR)
+      var(non.pub.surgeons$RAMR) 
+      mean(pub.surgeons$RAMR) # 2.231129
+      mean(non.pub.surgeons$RAMR) # 1.897059
+      plot(pub.surgeons$RAMR ~ articledata.no.NA, type="p")
+       
+  
+    mean(non.pub.surgeons$All.CABG.Cases)
+    var(non.pub.surgeons$All.CABG.Cases)
+    
+    mean(pub.surgeons$All.CABG.Cases)
+    hist(non.pub.surgeons$All.CABG.Cases)
+    
+    
+    ## Not a normal distribution, so we can't use the t.test
+    #   t.test(x = non.pub.surgeons$All.CABG.Cases, y = pub.surgeons$All.CABG.Cases, var.equal = F)
+    # Mann Whitney U test
+    wilcox.test(pub.surgeons$RAMR, non.pub.surgeons$RAMR, conf.int = TRUE, conf.level = 0.95)  
+  
+    # Take articledata for published surgeons
+    
+      articledata.pub = subset(articledata3, articledata3$Articles != 0)
+      glm.poisson.pub = glm(pub.surgeons$RAMR ~ articledata.pub$Articles + pub.surgeons$All.CABG.Cases + articledata.pub$Y.since.grad, family = poisson(link=log), na.action = na.exclude)
+      summary(glm.poisson.pub)
+    
+      glm.negbi = glm.nb(pub.surgeons$RAMR ~ articledata.pub$Articles + pub.surgeons$All.CABG.Cases + articledata.pub$Y.since.grad, na.action = na.exclude)
+      summary(glm.negbi)
+      glm.hurdle0 = hurdle(pub.surgeons$RAMR ~ pub.articles$Articles, link = 'log', dist = 'negbin')
+      summary(glm.hurdle0)
+  plot(glm.hurdle0)      
+
+  
+    # Testing the difference in means...seems impossible?
+  
+      #T-test is wrong because not normal distribution
+      t.test(x=pub.surgeons$RAMR, y = non.pub.surgeons$RAMR, paired = F, var.equal = F)
+      # No group-difference as t = 0.7464, p = 0.4577
+    boxplot(pub.surgeons$RAMR, non.pub.surgeons$RAMR, main = 'RAMR among publishing vs non-publishing surgeons', ylab = 'Risk-adjusted mortality rate (%)', names = c('Publishing', 'Non-publishing'))
+
+  hist(articledata3$Y.since.grad)
+  mean(articledata3$Y.since.grad)
+  shapiro.test(articledata3$Y.since.grad)
+  
+  summary(glm.nb(RAMR.100 ~ articledata3$Y.since.grad))
+  summary(glm.nb(Articles ~ articledata3$Y.since.grad))
+  
+  # Bootstrapping: https://stats.stackexchange.com/questions/112829/how-do-i-calculate-confidence-intervals-for-a-non-normal-distribution
+  # publishing surgeons
+                # function to obtain the mean
+                Bmean <- function(pub.surgeons, indices) {
+                    d <- pub.surgeons[indices] # allows boot to select sample 
+                    return(mean(d))
+                  } 
+                results <- boot(data=pub.surgeons$RAMR, statistic=Bmean, R=1000)
+                plot(results)
+                
+                boot.ci(results, type=c("norm", "basic", "perc", "bca"))
+
+
+Bmean.non.pub <- function(non.pub.surgeons, indices) {
+  d <- non.pub.surgeons[indices] # allows boot to select sample 
+  return(mean(d))
+} 
+results.non.pub <- boot(data=non.pub.surgeons$RAMR, statistic=Bmean.non.pub, R=1000)
+plot(results.non.pub)
+
+boot.ci(results.non.pub, type=c("norm", "basic", "perc", "bca"))
+
+
+
+  # Spearman rank
+  cor(pub.surgeons$RAMR, pub.articles$Articles, method=c('spearman'))
+  rcorr(pub.articles$Articles, pub.surgeons$RAMR, type= "spearman")
+  correlation = rcorr(pub.articles$Articles, pub.surgeons$RAMR, type= "spearman")
+  newdata = c(pub.articles$Articles + pub.surgeons$RAMR)
+  corrgram(correlation)
+
+
+
+  
